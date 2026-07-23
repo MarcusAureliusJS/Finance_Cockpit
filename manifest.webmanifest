@@ -1,6 +1,6 @@
 {
-  "name": "Finanz-Cockpit",
-  "short_name": "Finanzen",
+  "name": "Vault",
+  "short_name": "Vault",
   "description": "Einnahmen, Fixkosten, Kredite und Investments im Blick.",
   "start_url": ".",
   "scope": ".",
