@@ -695,6 +695,7 @@ export default function App() {
   const [investSort, setInvestSort] = useState("size");
   const [sheet, setSheet] = useState(null);
   const [priceStatus, setPriceStatus] = useState("");
+  const [priceFailIds, setPriceFailIds] = useState([]);
   const [pendingDelete, setPendingDelete] = useState(null);
   const importRef = useRef(null);
 
@@ -956,6 +957,12 @@ export default function App() {
         }),
       }));
     }
+    const failIds = priceable.filter((i) => {
+      const sym = (i.symbol || "").toUpperCase();
+      return updatedById[i.id] == null && updated[sym] == null;
+    }).map((i) => i.id);
+    setPriceFailIds(failIds);
+    setTimeout(() => setPriceFailIds([]), 12000);
     const n = Object.keys(updated).length + Object.keys(updatedById).length;
     const parts = [];
     if (n) parts.push(`${n} von ${priceable.length} Kursen aktualisiert`);
@@ -1003,12 +1010,13 @@ export default function App() {
 
   const monthLabel = new Date().toLocaleDateString("de-DE", { month: "long", year: "numeric" });
 
-  const ListItem = ({ lead, title, sub, value, valueColor, tag, armed, onEdit, onDelete }) => (
+  const ListItem = ({ lead, title, sub, value, valueColor, tag, armed, onEdit, onDelete, note }) => (
     <div className="fc-item">
       {lead}
       <div className="fc-item-main" onClick={onEdit}>
         <div className="fc-item-title">{title}{tag}</div>
         <div className="fc-item-sub">{sub}</div>
+        {note && <div className="fc-note">{note}</div>}
       </div>
       <div className="fc-item-right">
         <div className="fc-item-value" style={{ color: valueColor || C.ink }}>{value}</div>
@@ -1085,6 +1093,7 @@ export default function App() {
         .fc-status{margin:0 18px 12px;font-size:14px;color:${C.body};}
         .fc-gain{font-size:13px;font-weight:500;font-variant-numeric:tabular-nums;}
         .fc-hint{margin:12px 18px 0;font-size:13px;line-height:1.4;color:${C.muted};}
+        .fc-note{margin-top:3px;font-size:12.5px;font-weight:500;line-height:1.3;color:${C.error};}
         .fc-chip{display:inline-flex;align-items:center;gap:4px;border:none;background:${C.strong};color:${C.ink};font-size:11px;font-weight:600;padding:4px 9px;border-radius:9999px;cursor:pointer;font-family:inherit;}
         .fc-chip:active{background:${C.borderStrong};}
         .fc-seg{display:flex;background:${C.soft};border-radius:9999px;padding:4px;margin:14px 16px 4px;gap:4px;}
@@ -1379,6 +1388,7 @@ export default function App() {
                         </span>
                       </span>
                     }
+                    note={priceFailIds.includes(i.id) ? "Keine Live-Daten – zum manuellen Eintragen tippen" : null}
                     onEdit={() => setSheet({ type: "invest", item: i })}
                     onDelete={() => remove("investments", i.id)}
                   />
