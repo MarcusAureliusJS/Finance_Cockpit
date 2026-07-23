@@ -1,6 +1,6 @@
 /* Minimaler Service Worker: App-Shell cachen (stale-while-revalidate),
    API-Aufrufe (Kurse, Logos) gehen immer direkt ins Netz. */
-const CACHE = "finanz-cockpit-v2";
+const CACHE = "finanz-cockpit-v3";
 
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (e) => {
