@@ -921,8 +921,10 @@ export default function App() {
             const q = await fetch(`https://api.twelvedata.com/quote?symbol=${encodeURIComponent(sym)}&apikey=${settings.tdKey}`).then((r) => r.json());
             const px = q && q.close != null ? Number(q.close) : null;
             if (px && q.currency) { const r = await fxTo(q.currency); if (r) updated[sym.toUpperCase()] = px * r; else failed.push(sym); }
+            else if (q && q.code === 429) { notes.push("Twelve-Data-Limit erreicht – in 1 Min. erneut versuchen"); break; }
+            else if (q && /Grow|Venture/i.test(q.message || "")) failed.push(`${sym} (EU-Börse nur im kostenpflichtigen Plan)`);
             else failed.push(`${sym} (nicht gefunden)`);
-            await sleep(300);
+            await sleep(350);
           } catch { failed.push(sym); }
         }
         for (const m of tdCommods) {
@@ -932,8 +934,10 @@ export default function App() {
             const px = q && q.close != null ? Number(q.close) : null;
             const ccy = (q && q.currency) || "USD";
             if (px) { const r = await fxTo(ccy); if (r) updatedById[m.id] = px * r; else failed.push(m.name); }
+            else if (q && q.code === 429) { notes.push("Twelve-Data-Limit erreicht – in 1 Min. erneut versuchen"); break; }
+            else if (q && /Grow|Venture/i.test(q.message || "")) failed.push(`${m.name} (nur im kostenpflichtigen Plan)`);
             else failed.push(m.name);
-            await sleep(300);
+            await sleep(350);
           } catch { failed.push(m.name); }
         }
       }
