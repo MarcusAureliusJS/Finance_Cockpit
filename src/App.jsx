@@ -127,14 +127,33 @@ const TICKER_DOMAINS = {
 };
 
 const uid = () => Math.random().toString(36).slice(2, 10);
+
+/* ---------- Währung (EUR / USD / CHF) ---------- */
+const CURRENCIES = ["EUR", "USD", "CHF"];
+let CUR = "EUR"; // wird beim Rendern aus den Einstellungen gesetzt
+const curSym = () => (CUR === "EUR" ? "€" : CUR === "USD" ? "$" : "CHF");
 const eur = (v) =>
-  new Intl.NumberFormat("de-DE", {
+  new Intl.NumberFormat(CUR === "CHF" ? "de-CH" : "de-DE", {
     style: "currency",
-    currency: "EUR",
+    currency: CUR,
     maximumFractionDigits: Math.abs(v) < 10 && v !== 0 ? 2 : 0,
   }).format(v || 0);
 const eurFull = (v) =>
-  new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" }).format(v || 0);
+  new Intl.NumberFormat(CUR === "CHF" ? "de-CH" : "de-DE", { style: "currency", currency: CUR }).format(v || 0);
+
+/* USD → Zielwährung, mit Fallback-Quelle (frankfurter.app ist unzuverlässig geworden) */
+async function fetchUsdRate(target) {
+  if (target === "USD") return 1;
+  try {
+    const j = await fetch(`https://api.frankfurter.dev/v1/latest?base=USD&symbols=${target}`).then((r) => r.json());
+    if (j && j.rates && j.rates[target]) return j.rates[target];
+  } catch { /* Fallback unten */ }
+  try {
+    const j = await fetch("https://open.er-api.com/v6/latest/USD").then((r) => r.json());
+    if (j && j.rates && j.rates[target]) return j.rates[target];
+  } catch { /* beide down */ }
+  return 0;
+}
 
 const monthly = (item) =>
   item.interval === "jaehrlich" ? (Number(item.amount) || 0) / 12 : Number(item.amount) || 0;
@@ -280,7 +299,7 @@ function IncomeForm({ initial, onSave }) {
           {INCOME_TYPES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
         </select>
       </Field>
-      <Field label="Betrag pro Monat (€)">
+      <Field label={`Betrag pro Monat (${curSym()})`}>
         <input type="number" inputMode="decimal" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} placeholder="0" />
       </Field>
       <Btn disabled={!f.name || !f.amount} onClick={() => onSave({ ...f, amount: Number(f.amount) })}>Speichern</Btn>
@@ -301,7 +320,7 @@ function ExpenseForm({ initial, onSave }) {
         </select>
       </Field>
       <div className="fc-row2">
-        <Field label="Betrag (€)">
+        <Field label={`Betrag (${curSym()})`}>
           <input type="number" inputMode="decimal" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} placeholder="0" />
         </Field>
         <Field label="Intervall">
@@ -339,10 +358,10 @@ function CreditForm({ initial, onSave }) {
         <input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="z. B. Immobilienkredit" />
       </Field>
       <div className="fc-row2">
-        <Field label="Monatsrate (€)">
+        <Field label={`Monatsrate (${curSym()})`}>
           <input type="number" inputMode="decimal" value={f.rate} onChange={(e) => setF({ ...f, rate: e.target.value })} placeholder="0" />
         </Field>
-        <Field label="Restschuld heute (€)">
+        <Field label={`Restschuld heute (${curSym()})`}>
           <input type="number" inputMode="decimal" value={f.balance} onChange={(e) => setF({ ...f, balance: e.target.value })} placeholder="0" />
         </Field>
       </div>
@@ -429,11 +448,11 @@ function InvestForm({ initial, onSave, finnhubKey }) {
           <Field label="Bezeichnung">
             <input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder={f.type === "immobilie" ? "z. B. Eigenheim" : "z. B. Tagesgeld"} />
           </Field>
-          <Field label={f.type === "immobilie" ? "Aktueller Wert (€)" : "Betrag (€)"}>
+          <Field label={f.type === "immobilie" ? `Aktueller Wert (${curSym()})` : `Betrag (${curSym()})`}>
             <input type="number" inputMode="decimal" value={f.price} onChange={(e) => setF({ ...f, price: e.target.value })} placeholder="0" />
           </Field>
           {f.type === "immobilie" && (
-            <Field label="Kaufpreis (€, optional – für Gewinn/Verlust)">
+            <Field label={`Kaufpreis (${curSym()}, optional – für Gewinn/Verlust)`}>
               <input type="number" inputMode="decimal" value={f.buyPrice} onChange={(e) => setF({ ...f, buyPrice: e.target.value })} placeholder="0" />
             </Field>
           )}
@@ -466,11 +485,11 @@ function InvestForm({ initial, onSave, finnhubKey }) {
             <Field label="Anzahl / Stück">
               <input type="number" inputMode="decimal" value={f.qty} onChange={(e) => setF({ ...f, qty: e.target.value })} placeholder="0" />
             </Field>
-            <Field label="Kaufkurs (€)">
+            <Field label={`Kaufkurs (${curSym()})`}>
               <input type="number" inputMode="decimal" value={f.buyPrice} onChange={(e) => setF({ ...f, buyPrice: e.target.value })} placeholder="0" />
             </Field>
           </div>
-          <Field label="Aktueller Kurs (€) – wird per Kurs-Update automatisch gepflegt">
+          <Field label={`Aktueller Kurs (${curSym()}) – wird per Kurs-Update automatisch gepflegt`}>
             <input type="number" inputMode="decimal" value={f.price} onChange={(e) => setF({ ...f, price: e.target.value })} placeholder="0" />
           </Field>
           <Field label="Logo-URL (optional, falls kein Logo gefunden wird)">
@@ -514,7 +533,8 @@ function CashflowBar({ catTotals, creditRate, free }) {
 /* ---------- Haupt-App ---------- */
 export default function App() {
   const [data, setData] = useState(() => loadLS(DATA_KEY, EMPTY));
-  const [settings, setSettings] = useState(() => loadLS(SETTINGS_KEY, { finnhubKey: "" }));
+  const [settings, setSettings] = useState(() => loadLS(SETTINGS_KEY, { finnhubKey: "", currency: "EUR" }));
+  CUR = CURRENCIES.includes(settings.currency) ? settings.currency : "EUR";
   const [tab, setTab] = useState("home");
   const [sheet, setSheet] = useState(null);
   const [priceStatus, setPriceStatus] = useState("");
@@ -612,9 +632,11 @@ export default function App() {
     const failed = [];
     const updated = {};   // symbol → price
     const resolved = {};  // symbol → coinId (für künftige Updates cachen)
+    const cur = CURRENCIES.includes(settings.currency) ? settings.currency : "EUR";
+    const curLow = cur.toLowerCase();
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-    /* Krypto → CoinGecko (kostenlos, ohne Key, direkt in EUR) */
+    /* Krypto → CoinGecko (kostenlos, ohne Key, direkt in der gewählten Währung) */
     const cryptos = priceable.filter((i) => i.type === "krypto");
     if (cryptos.length) {
       const symToId = {};
@@ -636,13 +658,13 @@ export default function App() {
       const ids = Object.values(symToId);
       if (ids.length) {
         try {
-          const r = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${ids.join(",")}&vs_currencies=eur`);
+          const r = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${ids.join(",")}&vs_currencies=${curLow}`);
           if (r.status === 429) {
             notes.push("CoinGecko-Limit erreicht – in 1 Min. erneut versuchen");
           } else {
             const j = await r.json();
             for (const [s, id] of Object.entries(symToId)) {
-              const p = j[id] && j[id].eur;
+              const p = j[id] && j[id][curLow];
               if (p) updated[s] = p;
               else failed.push(s);
             }
@@ -653,17 +675,13 @@ export default function App() {
       }
     }
 
-    /* Aktien/ETF → Finnhub (USD) + Frankfurter (USD→EUR) */
+    /* Aktien/ETF → Finnhub (USD) + Umrechnung in die gewählte Währung */
     const stocks = priceable.filter((i) => i.type === "aktie" || i.type === "etf");
     if (stocks.length) {
       if (!settings.finnhubKey) {
         notes.push("Für Aktien/ETF: Finnhub-Key in den Einstellungen hinterlegen");
       } else {
-        let usdEur = 0;
-        try {
-          const fx = await fetch("https://api.frankfurter.app/latest?from=USD&to=EUR").then((r) => r.json());
-          usdEur = (fx.rates && fx.rates.EUR) || 0;
-        } catch { /* unten */ }
+        const usdEur = await fetchUsdRate(cur);
         if (!usdEur) {
           notes.push("Wechselkurs nicht erreichbar – Aktien übersprungen");
         } else {
@@ -1060,7 +1078,7 @@ export default function App() {
             <Btn kind="ghost" disabled={!data.investments.length || priceStatus.startsWith("Kurse werden")} onClick={refreshPrices}>Kurse aktualisieren</Btn>
           </div>
           <div className="fc-hint">
-            Krypto-Kurse kommen live von CoinGecko (ohne Key). Aktien/ETF-Kurse kommen von Finnhub in USD und werden zum Tageskurs in EUR umgerechnet – dafür in den Einstellungen einen kostenlosen Finnhub-Key hinterlegen. US-Ticker sind im Free-Tier am zuverlässigsten.
+            Krypto-Kurse kommen live von CoinGecko (ohne Key). Aktien/ETF-Kurse kommen von Finnhub in USD und werden zum Tageskurs in deine Währung umgerechnet – dafür in den Einstellungen einen kostenlosen Finnhub-Key hinterlegen. US-Ticker sind im Free-Tier am zuverlässigsten.
             {lastPriceUpdate > 0 && <> · Stand: {new Date(lastPriceUpdate).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</>}
           </div>
         </>
@@ -1089,6 +1107,24 @@ export default function App() {
       )}
       {sheet?.type === "settings" && (
         <Sheet title="Einstellungen" onClose={() => setSheet(null)}>
+          <Field label="Währung (Anzeige & Berechnung)">
+            <div style={{ display: "flex", gap: 8 }}>
+              {CURRENCIES.map((c) => (
+                <Btn
+                  key={c}
+                  kind={(CURRENCIES.includes(settings.currency) ? settings.currency : "EUR") === c ? "primary" : "ghost"}
+                  onClick={() => setSettings({ ...settings, currency: c })}
+                  style={{ flex: 1 }}
+                >
+                  {c}
+                </Btn>
+              ))}
+            </div>
+          </Field>
+          <div style={{ fontSize: 12.5, lineHeight: 1.4, color: C.muted, margin: "-6px 0 14px" }}>
+            Bestehende Beträge werden nicht umgerechnet – sie gelten in der gewählten Währung.
+            Live-Kurse (Aktien &amp; Krypto) werden automatisch in die gewählte Währung umgerechnet.
+          </div>
           <Field label="Finnhub API-Key (für Aktien/ETF-Kurse, kostenlos auf finnhub.io)">
             <input
               value={settings.finnhubKey}
