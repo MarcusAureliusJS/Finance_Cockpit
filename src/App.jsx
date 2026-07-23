@@ -641,6 +641,7 @@ export default function App() {
   CUR = CURRENCIES.includes(settings.currency) ? settings.currency : "EUR";
   const [tab, setTab] = useState("home");
   const [costView, setCostView] = useState("fix");
+  const [investSort, setInvestSort] = useState("size");
   const [sheet, setSheet] = useState(null);
   const [priceStatus, setPriceStatus] = useState("");
   const [pendingDelete, setPendingDelete] = useState(null);
@@ -676,6 +677,12 @@ export default function App() {
     m.setAttribute("content", bg);
     document.body.style.background = bg;
   }, [dark]);
+
+  /* Hintergrund-Scroll sperren, solange ein Sheet/Modal offen ist */
+  useEffect(() => {
+    document.body.style.overflow = sheet ? "hidden" : "";
+    return () => { document.body.style.overflow = ""; };
+  }, [sheet]);
 
   /* Auto-Tilgung: bei jedem App-Start verpasste Kredit-Abbuchungen anwenden */
   useEffect(() => {
@@ -990,7 +997,7 @@ export default function App() {
         <div>
           <div className="eyebrow">{monthLabel}</div>
           <h1>
-            {tab === "home" && "Finanz-Cockpit"}
+            {tab === "home" && "Vault"}
             {tab === "income" && "Einnahmen"}
             {tab === "expenses" && (costView === "fix" ? "Fixkosten" : "Variable Kosten")}
             {tab === "credits" && "Kredite"}
@@ -1220,10 +1227,24 @@ export default function App() {
             <div className="fc-kpi"><div className="l">Gewinn / Verlust</div><div className="v" style={{ color: gain >= 0 ? C.positive : C.error }}>{gain >= 0 ? "+" : ""}{eur(gain)}</div></div>
           </div>
           <div style={{ height: 12 }} />
+          {data.investments.length > 1 && (
+            <div className="fc-seg" role="tablist">
+              <button className={investSort === "size" ? "active" : ""} onClick={() => setInvestSort("size")}>Nach Grösse</button>
+              <button className={investSort === "type" ? "active" : ""} onClick={() => setInvestSort("type")}>Nach Art</button>
+            </div>
+          )}
           {priceStatus && <div className="fc-status">{priceStatus}</div>}
           {data.investments.length === 0
             ? <Empty text="Erfasse Aktien, ETFs und Krypto – der Ticker reicht, Name und Logo kommen automatisch. Auch Immobilien und Cash lassen sich als Position anlegen." />
-            : <Card>{data.investments.map((i) => {
+            : <Card>{[...data.investments].sort((a, b) => {
+                const va = a.qty * (a.price || 0), vb = b.qty * (b.price || 0);
+                if (investSort === "type") {
+                  const ord = { aktie: 0, etf: 1, krypto: 2, immobilie: 3, cash: 4 };
+                  const d = (ord[a.type] ?? 9) - (ord[b.type] ?? 9);
+                  if (d !== 0) return d;
+                }
+                return vb - va;
+              }).map((i) => {
                 const val = i.qty * (i.price || 0);
                 const g = val - i.qty * (i.buyPrice || 0);
                 const isValue = VALUE_TYPES.includes(i.type);
