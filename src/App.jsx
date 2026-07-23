@@ -1,31 +1,33 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, LineChart, Line, XAxis, YAxis } from "recharts";
 import {
   Shield, Home, Car, Repeat, ShoppingCart, MoreHorizontal,
   Wallet, Baby, HeartHandshake, Coins, Landmark,
   LayoutGrid, Receipt, TrendingUp, Settings, Download, Upload,
   Heart, Stethoscope, Users, Banknote,
+  Sofa, Sparkles, Fuel, ShoppingBag, Plane, Gamepad2, Utensils, Shirt, GraduationCap,
+  Sun, Moon, Monitor,
 } from "lucide-react";
 
 /* ---------- Airbnb Design Tokens (aus DESIGN-airbnb.md) ---------- */
 const C = {
-  canvas: "#ffffff",
-  soft: "#f7f7f7",
-  strong: "#f2f2f2",
-  ink: "#222222",
-  body: "#3f3f3f",
-  muted: "#6a6a6a",
-  mutedSoft: "#929292",
-  hairline: "#dddddd",
-  hairlineSoft: "#ebebeb",
-  borderStrong: "#c1c1c1",
-  rausch: "#ff385c",
-  rauschActive: "#e00b41",
-  rauschDisabled: "#ffd1da",
-  luxe: "#460479",
-  plus: "#92174d",
-  error: "#c13515",
-  positive: "#1f7a4d",
+  canvas: "var(--c-canvas)",
+  soft: "var(--c-soft)",
+  strong: "var(--c-strong)",
+  ink: "var(--c-ink)",
+  body: "var(--c-body)",
+  muted: "var(--c-muted)",
+  mutedSoft: "var(--c-mutedSoft)",
+  hairline: "var(--c-hairline)",
+  hairlineSoft: "var(--c-hairlineSoft)",
+  borderStrong: "var(--c-borderStrong)",
+  rausch: "var(--c-rausch)",
+  rauschActive: "var(--c-rauschActive)",
+  rauschDisabled: "var(--c-rauschDisabled)",
+  luxe: "var(--c-luxe)",
+  plus: "var(--c-plus)",
+  error: "var(--c-error)",
+  positive: "var(--c-positive)",
 };
 
 const FONT = "'Airbnb Cereal VF', Circular, Inter, -apple-system, system-ui, Roboto, 'Helvetica Neue', sans-serif";
@@ -79,6 +81,30 @@ const INCOME_ICONS = {
   elterngeld: HeartHandshake,
   sonstiges: Coins,
 };
+
+/* ---------- Variable Kostenkategorien ---------- */
+const VARIABLE_CATS = [
+  { id: "v_lebensmittel", label: "Lebensmittel", color: C.plus },
+  { id: "v_haushalt", label: "Haushalt", color: C.luxe },
+  { id: "v_drogerie", label: "Drogerie & Pflege", color: "#4a7d6d" },
+  { id: "v_mobilitaet", label: "Mobilität", color: C.rausch },
+  { id: "v_anschaffung", label: "Anschaffungen", color: "#8a5a2b" },
+  { id: "v_urlaub", label: "Urlaub & Reisen", color: "#d68f6f" },
+  { id: "v_restaurant", label: "Restaurant & Ausgehen", color: "#c17d3a" },
+  { id: "v_freizeit", label: "Freizeit & Hobby", color: C.mutedSoft },
+  { id: "v_kleidung", label: "Kleidung", color: "#5b8fb0" },
+  { id: "v_gesundheit", label: "Gesundheit", color: "#3f7d99" },
+  { id: "v_bildung", label: "Bildung", color: "#7a6ff0" },
+  { id: "v_sonstiges", label: "Sonstiges", color: C.borderStrong },
+];
+const VAR_CAT_ICONS = {
+  v_lebensmittel: ShoppingCart, v_haushalt: Sofa, v_drogerie: Sparkles,
+  v_mobilitaet: Fuel, v_anschaffung: ShoppingBag, v_urlaub: Plane,
+  v_restaurant: Utensils, v_freizeit: Gamepad2, v_kleidung: Shirt,
+  v_gesundheit: Stethoscope, v_bildung: GraduationCap, v_sonstiges: MoreHorizontal,
+};
+const ALL_CATS = [...EXPENSE_CATS, ...VARIABLE_CATS];
+const ALL_CAT_ICONS = { ...CAT_ICONS, ...VAR_CAT_ICONS };
 
 /* Bekannte Ticker: sofortige Namens-/Typ-Erkennung ohne Netz */
 const KNOWN_ASSETS = {
@@ -176,7 +202,11 @@ const DEMO = {
     { id: uid(), name: "Strom & Gas", category: "wohnen", amount: 180, interval: "monatlich" },
     { id: uid(), name: "Tanken Pendeln", category: "mobilitaet", amount: 320, interval: "monatlich" },
     { id: uid(), name: "Streaming & Handy", category: "abos", amount: 55, interval: "monatlich" },
-    { id: uid(), name: "Lebensmittel", category: "leben", amount: 650, interval: "monatlich" },
+    { id: uid(), name: "Lebenshaltung", category: "leben", amount: 300, interval: "monatlich" },
+    { id: uid(), name: "Wocheneinkauf", category: "v_lebensmittel", amount: 480, interval: "monatlich", kind: "variabel" },
+    { id: uid(), name: "Drogerie", category: "v_drogerie", amount: 60, interval: "monatlich", kind: "variabel" },
+    { id: uid(), name: "Restaurant & Ausgehen", category: "v_restaurant", amount: 140, interval: "monatlich", kind: "variabel" },
+    { id: uid(), name: "Sommerurlaub", category: "v_urlaub", amount: 2400, interval: "jaehrlich", kind: "variabel" },
   ],
   credits: [
     { id: uid(), name: "Autokredit", rate: 285, balance: 9400, interest: 4.9 },
@@ -307,16 +337,18 @@ function IncomeForm({ initial, onSave }) {
   );
 }
 
-function ExpenseForm({ initial, onSave }) {
-  const [f, setF] = useState(initial || { name: "", category: "versicherung", amount: "", interval: "monatlich" });
+function ExpenseForm({ initial, kind, onSave }) {
+  const effKind = (initial && initial.kind) || kind || "fix";
+  const cats = effKind === "variabel" ? VARIABLE_CATS : EXPENSE_CATS;
+  const [f, setF] = useState(initial || { name: "", category: cats[0].id, amount: "", interval: "monatlich", kind: effKind });
   return (
     <div className="fc-form">
       <Field label="Bezeichnung">
-        <input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="z. B. Haftpflicht" />
+        <input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder={effKind === "variabel" ? "z. B. Wocheneinkauf" : "z. B. Haftpflicht"} />
       </Field>
       <Field label="Kategorie">
         <select value={f.category} onChange={(e) => setF({ ...f, category: e.target.value })}>
-          {EXPENSE_CATS.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+          {cats.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
         </select>
       </Field>
       <div className="fc-row2">
@@ -330,7 +362,7 @@ function ExpenseForm({ initial, onSave }) {
           </select>
         </Field>
       </div>
-      <Btn disabled={!f.name || !f.amount} onClick={() => onSave({ ...f, amount: Number(f.amount) })}>Speichern</Btn>
+      <Btn disabled={!f.name || !f.amount} onClick={() => onSave({ ...f, kind: effKind, amount: Number(f.amount) })}>Speichern</Btn>
     </div>
   );
 }
@@ -506,11 +538,11 @@ function InvestForm({ initial, onSave, finnhubKey }) {
 }
 
 /* ---------- Cashflow-Leiste ---------- */
-function CashflowBar({ catTotals, creditRate, free }) {
+function CashflowBar({ catTotals, creditRate, surplus }) {
   const segs = [
     ...catTotals.filter((c) => c.value > 0).map((c) => ({ label: c.label, value: c.value, color: c.color })),
     ...(creditRate > 0 ? [{ label: "Kredite", value: creditRate, color: C.ink }] : []),
-    ...(free > 0 ? [{ label: "Frei", value: free, color: C.positive }] : []),
+    ...(surplus > 0 ? [{ label: "Überschuss", value: surplus, color: C.positive }] : []),
   ];
   const total = segs.reduce((s, x) => s + x.value, 0);
   if (total <= 0) return null;
@@ -530,12 +562,85 @@ function CashflowBar({ catTotals, creditRate, free }) {
   );
 }
 
+/* ---------- Prognose (Zinseszins) ---------- */
+function ForecastView({ surplus, startValue }) {
+  const [ratePct, setRatePct] = useState("5");
+  const [contrib, setContrib] = useState(String(Math.max(0, Math.round(surplus || 0))));
+  const P = Math.max(0, startValue || 0);
+  const C0 = Math.max(0, Number(contrib) || 0);
+  const annual = Math.max(0, Number(ratePct) || 0) / 100;
+  const r = Math.pow(1 + annual, 1 / 12) - 1;
+  const value = (m) => (r > 0 ? P * Math.pow(1 + r, m) + C0 * ((Math.pow(1 + r, m) - 1) / r) : P + C0 * m);
+  const months = [];
+  for (let m = 1; m <= 24; m++) months.push(m);
+  for (let m = 27; m <= 120; m += 3) months.push(m);
+  for (let m = 132; m <= 480; m += 12) months.push(m);
+  const series = months.map((m) => ({ m, value: Math.round(value(m)) }));
+  const xTicks = [1, 3, 6, 12, 24, 60, 120, 240, 360, 480];
+  const xFmt = (m) => (m < 12 ? `${m} M` : `${Math.round(m / 12)} J`);
+  const compact = (v) => {
+    const a = Math.abs(v);
+    if (a >= 1e6) return (v / 1e6).toFixed(1).replace(".", ",") + " Mio";
+    if (a >= 1e3) return Math.round(v / 1e3) + "k";
+    return String(Math.round(v));
+  };
+  const milestones = [12, 60, 120, 240, 480];
+  const invested = (m) => P + C0 * m;
+  return (
+    <div>
+      <div className="fc-row2" style={{ marginBottom: 6 }}>
+        <Field label="Jährlicher Zins (%)">
+          <input type="number" inputMode="decimal" value={ratePct} onChange={(e) => setRatePct(e.target.value)} placeholder="5" />
+        </Field>
+        <Field label={`Monatlich sparen (${curSym()})`}>
+          <input type="number" inputMode="decimal" value={contrib} onChange={(e) => setContrib(e.target.value)} placeholder="0" />
+        </Field>
+      </div>
+      <div style={{ fontSize: 13, color: C.muted, margin: "-2px 0 12px", lineHeight: 1.4 }}>
+        Startwert ist dein heutiges Nettovermögen ({eur(P)}), verzinst mit Zinseszins (monatlich). X-Achse logarithmisch – links Monate, rechts bis 40 Jahre.
+      </div>
+      <div style={{ width: "100%", height: 240 }}>
+        <ResponsiveContainer>
+          <LineChart data={series} margin={{ top: 8, right: 14, bottom: 2, left: 2 }}>
+            <XAxis dataKey="m" type="number" scale="log" domain={[1, 480]} ticks={xTicks} tickFormatter={xFmt} tick={{ fontSize: 11, fill: C.muted }} stroke={C.hairline} />
+            <YAxis tickFormatter={compact} width={46} tick={{ fontSize: 11, fill: C.muted }} stroke={C.hairline} />
+            <Tooltip
+              formatter={(v) => [eurFull(v), "Vermögen"]}
+              labelFormatter={(m) => (m < 12 ? `${m} Monate` : `${(m / 12).toFixed(m % 12 ? 1 : 0).replace(".", ",")} Jahre`)}
+              contentStyle={{ background: C.canvas, border: `1px solid ${C.hairline}`, borderRadius: 8, color: C.ink, fontSize: 13, boxShadow: SHADOW }}
+            />
+            <Line type="monotone" dataKey="value" stroke={C.rausch} strokeWidth={2.5} dot={false} />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+      <div style={{ marginTop: 14 }}>
+        {milestones.map((m) => {
+          const val = Math.round(value(m));
+          const zins = Math.max(0, val - Math.round(invested(m)));
+          return (
+            <div className="fc-forecast-row" key={m}>
+              <span style={{ color: C.muted }}>{m < 12 ? `in ${m} Monaten` : `in ${m / 12} Jahren`}</span>
+              <span className="fv">{eur(val)} <span style={{ color: C.positive, fontWeight: 500, fontSize: 13 }}>+{eur(zins)} Zins</span></span>
+            </div>
+          );
+        })}
+      </div>
+      {C0 <= 0 && P <= 0 && (
+        <div style={{ fontSize: 13, color: C.muted, marginTop: 12, lineHeight: 1.4 }}>
+          Erfasse Einnahmen und Kosten, damit ein monatlicher Überschuss entsteht – dann zeigt die Prognose, wie dein Vermögen wächst.
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ---------- Haupt-App ---------- */
 export default function App() {
   const [data, setData] = useState(() => loadLS(DATA_KEY, EMPTY));
-  const [settings, setSettings] = useState(() => loadLS(SETTINGS_KEY, { finnhubKey: "", currency: "EUR" }));
+  const [settings, setSettings] = useState(() => loadLS(SETTINGS_KEY, { finnhubKey: "", currency: "EUR", theme: "system" }));
   CUR = CURRENCIES.includes(settings.currency) ? settings.currency : "EUR";
   const [tab, setTab] = useState("home");
+  const [costView, setCostView] = useState("fix");
   const [sheet, setSheet] = useState(null);
   const [priceStatus, setPriceStatus] = useState("");
   const [pendingDelete, setPendingDelete] = useState(null);
@@ -552,6 +657,25 @@ export default function App() {
   useEffect(() => {
     try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch { /* ignore */ }
   }, [settings]);
+
+  /* ---------- Theme (Hell / Dunkel / System) ---------- */
+  const [systemDark, setSystemDark] = useState(() =>
+    typeof matchMedia !== "undefined" && matchMedia("(prefers-color-scheme: dark)").matches);
+  useEffect(() => {
+    if (typeof matchMedia === "undefined") return;
+    const mq = matchMedia("(prefers-color-scheme: dark)");
+    const on = (e) => setSystemDark(e.matches);
+    mq.addEventListener ? mq.addEventListener("change", on) : mq.addListener(on);
+    return () => { mq.removeEventListener ? mq.removeEventListener("change", on) : mq.removeListener(on); };
+  }, []);
+  const dark = settings.theme === "dark" || (settings.theme !== "light" && systemDark);
+  useEffect(() => {
+    const bg = dark ? "#151515" : "#ffffff";
+    let m = document.querySelector('meta[name="theme-color"]');
+    if (!m) { m = document.createElement("meta"); m.name = "theme-color"; document.head.appendChild(m); }
+    m.setAttribute("content", bg);
+    document.body.style.background = bg;
+  }, [dark]);
 
   /* Auto-Tilgung: bei jedem App-Start verpasste Kredit-Abbuchungen anwenden */
   useEffect(() => {
@@ -583,13 +707,15 @@ export default function App() {
 
   /* Abgeleitete Zahlen */
   const incomeTotal = useMemo(() => data.incomes.reduce((s, i) => s + (Number(i.amount) || 0), 0), [data.incomes]);
-  const expenseTotal = useMemo(() => data.expenses.reduce((s, e) => s + monthly(e), 0), [data.expenses]);
+  const fixTotal = useMemo(() => data.expenses.filter((e) => e.kind !== "variabel").reduce((s, e) => s + monthly(e), 0), [data.expenses]);
+  const varTotal = useMemo(() => data.expenses.filter((e) => e.kind === "variabel").reduce((s, e) => s + monthly(e), 0), [data.expenses]);
+  const costTotal = fixTotal + varTotal;
   const creditRate = useMemo(() => data.credits.reduce((s, c) => s + (Number(c.rate) || 0), 0), [data.credits]);
   const creditBalance = useMemo(() => data.credits.reduce((s, c) => s + (Number(c.balance) || 0), 0), [data.credits]);
-  const free = incomeTotal - expenseTotal - creditRate;
+  const surplus = incomeTotal - costTotal - creditRate;
 
   const catTotals = useMemo(() =>
-    EXPENSE_CATS.map((c) => ({
+    ALL_CATS.map((c) => ({
       ...c,
       value: data.expenses.filter((e) => e.category === c.id).reduce((s, e) => s + monthly(e), 0),
     })).filter((c) => c.value > 0),
@@ -780,9 +906,10 @@ export default function App() {
   const isEmpty = !data.incomes.length && !data.expenses.length && !data.credits.length && !data.investments.length;
 
   return (
-    <div className="fc-root">
+    <div className={`fc-root ${dark ? "dark" : ""}`}>
       <style>{`
-        .fc-root{min-height:100vh;background:${C.canvas};color:${C.ink};font-family:${FONT};padding:0 0 92px;max-width:520px;margin:0 auto;}
+        .fc-root{--c-canvas:#ffffff;--c-soft:#f7f7f7;--c-strong:#f2f2f2;--c-ink:#222222;--c-body:#3f3f3f;--c-muted:#6a6a6a;--c-mutedSoft:#929292;--c-hairline:#dddddd;--c-hairlineSoft:#ebebeb;--c-borderStrong:#c1c1c1;--c-rausch:#ff385c;--c-rauschActive:#e00b41;--c-rauschDisabled:#ffd1da;--c-luxe:#460479;--c-plus:#92174d;--c-error:#c13515;--c-positive:#1f7a4d;min-height:100vh;background:${C.canvas};color:${C.ink};font-family:${FONT};padding:0 0 92px;max-width:520px;margin:0 auto;}
+        .fc-root.dark{--c-canvas:#151515;--c-soft:#1e1e1e;--c-strong:#292929;--c-ink:#f3f1ee;--c-body:#d4d1cc;--c-muted:#9d9891;--c-mutedSoft:#726d67;--c-hairline:#323232;--c-hairlineSoft:#272727;--c-borderStrong:#4c4a47;--c-rausch:#ff5a77;--c-rauschActive:#ff3d5f;--c-rauschDisabled:#5a2a33;--c-luxe:#b598ff;--c-plus:#e86ba0;--c-error:#ff6b5e;--c-positive:#45c98a;}
         .fc-root *{box-sizing:border-box;font-family:inherit;}
         .fc-header{padding:24px 18px 4px;display:flex;justify-content:space-between;align-items:flex-start;}
         .fc-header .eyebrow{font-size:14px;font-weight:500;line-height:1.29;color:${C.muted};}
@@ -844,6 +971,14 @@ export default function App() {
         .fc-status{margin:0 18px 12px;font-size:14px;color:${C.body};}
         .fc-gain{font-size:13px;font-weight:500;font-variant-numeric:tabular-nums;}
         .fc-hint{margin:12px 18px 0;font-size:13px;line-height:1.4;color:${C.muted};}
+        .fc-chip{display:inline-flex;align-items:center;gap:4px;border:none;background:${C.strong};color:${C.ink};font-size:11px;font-weight:600;padding:4px 9px;border-radius:9999px;cursor:pointer;font-family:inherit;}
+        .fc-chip:active{background:${C.borderStrong};}
+        .fc-seg{display:flex;background:${C.soft};border-radius:9999px;padding:4px;margin:14px 16px 4px;gap:4px;}
+        .fc-seg button{flex:1;border:none;background:transparent;color:${C.muted};font-size:14px;font-weight:600;padding:9px 0;border-radius:9999px;cursor:pointer;font-family:inherit;}
+        .fc-seg button.active{background:${C.canvas};color:${C.ink};box-shadow:${SHADOW};}
+        .fc-forecast-row{display:flex;justify-content:space-between;align-items:baseline;padding:9px 0;border-bottom:1px solid ${C.hairlineSoft};font-size:15px;}
+        .fc-forecast-row:last-child{border-bottom:none;}
+        .fc-forecast-row .fv{font-weight:700;font-variant-numeric:tabular-nums;text-align:right;}
         @media (prefers-reduced-motion: no-preference){
           .fc-sheet{animation:fcUp .22s ease-out;}
           @keyframes fcUp{from{transform:translateY(24px);opacity:.6}to{transform:translateY(0);opacity:1}}
@@ -857,7 +992,7 @@ export default function App() {
           <h1>
             {tab === "home" && "Finanz-Cockpit"}
             {tab === "income" && "Einnahmen"}
-            {tab === "expenses" && "Fixkosten"}
+            {tab === "expenses" && (costView === "fix" ? "Fixkosten" : "Variable Kosten")}
             {tab === "credits" && "Kredite"}
             {tab === "invest" && "Investments"}
           </h1>
@@ -879,19 +1014,25 @@ export default function App() {
             </div>
           )}
 
-          {incomeTotal > 0 && (
+          {!isEmpty && (
             <div className="fc-hero">
-              <div className="num" style={{ color: free >= 0 ? C.ink : C.error }}>
-                {eur(free)}
+              <div className="num" style={{ color: netWorth >= 0 ? C.ink : C.error }}>
+                {eur(netWorth)}
               </div>
-              <div className="lbl">Frei verfügbar pro Monat</div>
+              <div className="lbl">Nettovermögen</div>
             </div>
           )}
 
           <div className="fc-kpis">
             <div className="fc-kpi"><div className="l">Einnahmen</div><div className="v">{eur(incomeTotal)}</div></div>
-            <div className="fc-kpi"><div className="l">Fixkosten</div><div className="v">{eur(expenseTotal)}</div></div>
-            <div className="fc-kpi"><div className="l">Kreditraten</div><div className="v">{eur(creditRate)}</div></div>
+            <div className="fc-kpi"><div className="l">Gesamtkosten</div><div className="v">{eur(costTotal)}</div></div>
+            <div className="fc-kpi">
+              <div className="l" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6 }}>
+                <span>Monatl. Überschuss</span>
+                <button className="fc-chip" onClick={() => setSheet({ type: "forecast" })} aria-label="Prognose öffnen"><TrendingUp size={12} strokeWidth={2} /> Prognose</button>
+              </div>
+              <div className="v" style={{ color: surplus >= 0 ? C.positive : C.error }}>{eur(surplus)}</div>
+            </div>
             <div className="fc-kpi"><div className="l">Portfoliowert</div><div className="v">{eur(portfolioValue)}</div></div>
           </div>
 
@@ -899,7 +1040,7 @@ export default function App() {
             <>
               <SectionTitle>Wohin dein Geld fliesst</SectionTitle>
               <Card>
-                <CashflowBar catTotals={catTotals} creditRate={creditRate} free={free} />
+                <CashflowBar catTotals={catTotals} creditRate={creditRate} surplus={surplus} />
               </Card>
             </>
           )}
@@ -971,38 +1112,78 @@ export default function App() {
         </>
       )}
 
-      {/* ---------- Ausgaben ---------- */}
+      {/* ---------- Kosten (Fix / Variabel) ---------- */}
       {tab === "expenses" && (
         <>
-          <div className="fc-kpis">
-            <div className="fc-kpi"><div className="l">Fixkosten / Monat</div><div className="v">{eur(expenseTotal)}</div></div>
-            <div className="fc-kpi"><div className="l">davon Versicherungen</div><div className="v">{eur(catTotals.find((c) => c.id === "versicherung")?.value || 0)}</div></div>
+          <div className="fc-seg" role="tablist">
+            <button className={costView === "fix" ? "active" : ""} onClick={() => setCostView("fix")}>Fixkosten</button>
+            <button className={costView === "variabel" ? "active" : ""} onClick={() => setCostView("variabel")}>Variabel</button>
           </div>
-          {EXPENSE_CATS.map((cat) => {
-            const items = data.expenses.filter((e) => e.category === cat.id);
-            if (!items.length) return null;
-            return (
-              <React.Fragment key={cat.id}>
-                <SectionTitle right={<span className="fc-sum">{eur(items.reduce((s, e) => s + monthly(e), 0))} / Monat</span>}>{cat.label}</SectionTitle>
-                <Card>
-                  {items.map((e) => (
-                    <ListItem key={e.id}
-                      lead={<Lead icon={CAT_ICONS[e.category] || MoreHorizontal} />}
-                      armed={pendingDelete === e.id}
-                      title={e.name}
-                      tag={e.interval === "jaehrlich" ? <YearTag /> : null}
-                      sub={e.interval === "jaehrlich" ? `${eurFull(e.amount)} / Jahr` : "monatlich"}
-                      value={eur(monthly(e))}
-                      onEdit={() => setSheet({ type: "expense", item: e })}
-                      onDelete={() => remove("expenses", e.id)}
-                    />
-                  ))}
-                </Card>
-              </React.Fragment>
-            );
-          })}
-          {data.expenses.length === 0 && <div style={{ marginTop: 12 }}><Empty text="Erfasse Versicherungen, Miete, Abos und andere Fixkosten – monatlich oder jährlich." /></div>}
-          <div style={{ margin: "0 16px" }}><Btn onClick={() => setSheet({ type: "expense" })}>Ausgabe hinzufügen</Btn></div>
+          {costView === "fix" ? (
+            <>
+              <div className="fc-kpis">
+                <div className="fc-kpi"><div className="l">Fixkosten / Monat</div><div className="v">{eur(fixTotal)}</div></div>
+                <div className="fc-kpi"><div className="l">davon Versicherungen</div><div className="v">{eur(catTotals.find((c) => c.id === "versicherung")?.value || 0)}</div></div>
+              </div>
+              {EXPENSE_CATS.map((cat) => {
+                const items = data.expenses.filter((e) => e.category === cat.id && e.kind !== "variabel");
+                if (!items.length) return null;
+                return (
+                  <React.Fragment key={cat.id}>
+                    <SectionTitle right={<span className="fc-sum">{eur(items.reduce((s, e) => s + monthly(e), 0))} / Monat</span>}>{cat.label}</SectionTitle>
+                    <Card>
+                      {items.map((e) => (
+                        <ListItem key={e.id}
+                          lead={<Lead icon={ALL_CAT_ICONS[e.category] || MoreHorizontal} />}
+                          armed={pendingDelete === e.id}
+                          title={e.name}
+                          tag={e.interval === "jaehrlich" ? <YearTag /> : null}
+                          sub={e.interval === "jaehrlich" ? `${eurFull(e.amount)} / Jahr` : "monatlich"}
+                          value={eur(monthly(e))}
+                          onEdit={() => setSheet({ type: "expense", item: e })}
+                          onDelete={() => remove("expenses", e.id)}
+                        />
+                      ))}
+                    </Card>
+                  </React.Fragment>
+                );
+              })}
+              {data.expenses.filter((e) => e.kind !== "variabel").length === 0 && <div style={{ marginTop: 12 }}><Empty text="Erfasse Versicherungen, Miete, Abos und andere Fixkosten – monatlich oder jährlich." /></div>}
+              <div style={{ margin: "0 16px" }}><Btn onClick={() => setSheet({ type: "expense", kind: "fix" })}>Fixkosten hinzufügen</Btn></div>
+            </>
+          ) : (
+            <>
+              <div className="fc-kpis">
+                <div className="fc-kpi"><div className="l">Variable Kosten / Monat</div><div className="v">{eur(varTotal)}</div></div>
+                <div className="fc-kpi"><div className="l">Ø pro Tag</div><div className="v">{eur(varTotal / 30)}</div></div>
+              </div>
+              {VARIABLE_CATS.map((cat) => {
+                const items = data.expenses.filter((e) => e.category === cat.id && e.kind === "variabel");
+                if (!items.length) return null;
+                return (
+                  <React.Fragment key={cat.id}>
+                    <SectionTitle right={<span className="fc-sum">{eur(items.reduce((s, e) => s + monthly(e), 0))} / Monat</span>}>{cat.label}</SectionTitle>
+                    <Card>
+                      {items.map((e) => (
+                        <ListItem key={e.id}
+                          lead={<Lead icon={ALL_CAT_ICONS[e.category] || MoreHorizontal} />}
+                          armed={pendingDelete === e.id}
+                          title={e.name}
+                          tag={e.interval === "jaehrlich" ? <YearTag /> : null}
+                          sub={e.interval === "jaehrlich" ? `${eurFull(e.amount)} / Jahr` : "monatlich"}
+                          value={eur(monthly(e))}
+                          onEdit={() => setSheet({ type: "expense", item: e })}
+                          onDelete={() => remove("expenses", e.id)}
+                        />
+                      ))}
+                    </Card>
+                  </React.Fragment>
+                );
+              })}
+              {data.expenses.filter((e) => e.kind === "variabel").length === 0 && <div style={{ marginTop: 12 }}><Empty text="Erfasse variable Ausgaben wie Lebensmittel, Drogerie, Restaurant oder Urlaub – so siehst du, wohin dein Alltagsgeld fliesst." /></div>}
+              <div style={{ margin: "0 16px" }}><Btn onClick={() => setSheet({ type: "expense", kind: "variabel" })}>Variable Kosten hinzufügen</Btn></div>
+            </>
+          )}
         </>
       )}
 
@@ -1091,8 +1272,13 @@ export default function App() {
         </Sheet>
       )}
       {sheet?.type === "expense" && (
-        <Sheet title={sheet.item ? "Ausgabe bearbeiten" : "Neue Ausgabe"} onClose={() => setSheet(null)}>
-          <ExpenseForm initial={sheet.item} onSave={(f) => save("expenses", f)} />
+        <Sheet title={sheet.item ? "Ausgabe bearbeiten" : ((sheet.kind || "fix") === "variabel" ? "Neue variable Ausgabe" : "Neue Fixkosten")} onClose={() => setSheet(null)}>
+          <ExpenseForm initial={sheet.item} kind={sheet.kind} onSave={(f) => save("expenses", f)} />
+        </Sheet>
+      )}
+      {sheet?.type === "forecast" && (
+        <Sheet title="Prognose – Vermögensentwicklung" onClose={() => setSheet(null)}>
+          <ForecastView surplus={surplus} startValue={netWorth} />
         </Sheet>
       )}
       {sheet?.type === "credit" && (
@@ -1107,6 +1293,15 @@ export default function App() {
       )}
       {sheet?.type === "settings" && (
         <Sheet title="Einstellungen" onClose={() => setSheet(null)}>
+          <Field label="Darstellung">
+            <div style={{ display: "flex", gap: 8 }}>
+              {[{ id: "light", label: "Hell", Ic: Sun }, { id: "dark", label: "Dunkel", Ic: Moon }, { id: "system", label: "System", Ic: Monitor }].map((o) => (
+                <Btn key={o.id} kind={(settings.theme || "system") === o.id ? "primary" : "ghost"} onClick={() => setSettings({ ...settings, theme: o.id })} style={{ flex: 1, gap: 6 }}>
+                  <o.Ic size={15} strokeWidth={1.9} /> {o.label}
+                </Btn>
+              ))}
+            </div>
+          </Field>
           <Field label="Währung (Anzeige & Berechnung)">
             <div style={{ display: "flex", gap: 8 }}>
               {CURRENCIES.map((c) => (
@@ -1160,7 +1355,7 @@ export default function App() {
           {[
             { id: "home", label: "Übersicht", ic: LayoutGrid },
             { id: "income", label: "Einnahmen", ic: Wallet },
-            { id: "expenses", label: "Fixkosten", ic: Receipt },
+            { id: "expenses", label: "Kosten", ic: Receipt },
             { id: "credits", label: "Kredite", ic: Landmark },
             { id: "invest", label: "Invest", ic: TrendingUp },
           ].map((t) => (
