@@ -6,7 +6,7 @@ import {
   LayoutGrid, Receipt, TrendingUp, Settings, Download, Upload,
   Heart, Stethoscope, Users, Banknote,
   Sofa, Sparkles, Fuel, ShoppingBag, Plane, Gamepad2, Utensils, Shirt, GraduationCap,
-  Sun, Moon, Monitor,
+  Sun, Moon, Monitor, Gem,
 } from "lucide-react";
 
 /* ---------- Airbnb Design Tokens (aus DESIGN-airbnb.md) ---------- */
@@ -56,8 +56,19 @@ const INVEST_TYPES = [
   { id: "aktie", label: "Aktie" },
   { id: "etf", label: "ETF" },
   { id: "krypto", label: "Krypto" },
+  { id: "rohstoff", label: "Rohstoff" },
   { id: "immobilie", label: "Immobilie" },
   { id: "cash", label: "Cash" },
+];
+
+/* Rohstoffe: Edelmetalle keyless via gold-api (USD/Unze); Öl via Twelve Data */
+const COMMODITIES = [
+  { id: "gold", label: "Gold", unit: "Unzen", src: "metal", sym: "XAU" },
+  { id: "silber", label: "Silber", unit: "Unzen", src: "metal", sym: "XAG" },
+  { id: "platin", label: "Platin", unit: "Unzen", src: "metal", sym: "XPT" },
+  { id: "palladium", label: "Palladium", unit: "Unzen", src: "metal", sym: "XPD" },
+  { id: "wti", label: "Öl (WTI)", unit: "Barrel", src: "td", sym: "WTI/USD" },
+  { id: "brent", label: "Öl (Brent)", unit: "Barrel", src: "td", sym: "BRENT/USD" },
 ];
 
 /* Typen mit festem Wert statt Stückzahl × Kurs */
@@ -178,6 +189,20 @@ async function fetchUsdRate(target) {
     const j = await fetch("https://open.er-api.com/v6/latest/USD").then((r) => r.json());
     if (j && j.rates && j.rates[target]) return j.rates[target];
   } catch { /* beide down */ }
+  return 0;
+}
+
+/* Generischer Wechselkurs from->to (frankfurter.dev, Fallback er-api) */
+async function fetchFx(from, to) {
+  if (!from || !to || from === to) return 1;
+  try {
+    const j = await fetch(`https://api.frankfurter.dev/v1/latest?base=${from}&symbols=${to}`).then((r) => r.json());
+    if (j && j.rates && j.rates[to]) return j.rates[to];
+  } catch { /* Fallback */ }
+  try {
+    const j = await fetch(`https://open.er-api.com/v6/latest/${from}`).then((r) => r.json());
+    if (j && j.rates && j.rates[to]) return j.rates[to];
+  } catch { /* down */ }
   return 0;
 }
 
@@ -470,12 +495,38 @@ function InvestForm({ initial, onSave, finnhubKey }) {
   return (
     <div className="fc-form">
       <Field label="Typ">
-        <select value={f.type} onChange={(e) => setF({ ...f, type: e.target.value })}>
+        <select value={f.type} onChange={(e) => { const t = e.target.value; setF((p) => ({ ...p, type: t, ...(t === "rohstoff" && !p.commodity ? { commodity: "gold", name: "Gold", unit: "Unzen", symbol: "gold" } : {}) })); }}>
           {INVEST_TYPES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
         </select>
       </Field>
 
-      {isValueType ? (
+      {f.type === "rohstoff" ? (
+        <>
+          <Field label="Rohstoff">
+            <select value={f.commodity || "gold"} onChange={(e) => { const c = COMMODITIES.find((x) => x.id === e.target.value); setF({ ...f, commodity: c.id, name: c.label, unit: c.unit, symbol: c.id }); }}>
+              {COMMODITIES.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+            </select>
+          </Field>
+          <div className="fc-row2">
+            <Field label={`Menge (${(COMMODITIES.find((x) => x.id === (f.commodity || "gold")) || {}).unit})`}>
+              <input type="number" inputMode="decimal" value={f.qty} onChange={(e) => setF({ ...f, qty: e.target.value })} placeholder="0" />
+            </Field>
+            <Field label={`Kaufkurs pro Einheit (${curSym()})`}>
+              <input type="number" inputMode="decimal" value={f.buyPrice} onChange={(e) => setF({ ...f, buyPrice: e.target.value })} placeholder="0" />
+            </Field>
+          </div>
+          <Field label={`Aktueller Kurs (${curSym()}) – wird automatisch gepflegt`}>
+            <input type="number" inputMode="decimal" value={f.price} onChange={(e) => setF({ ...f, price: e.target.value })} placeholder="0" />
+          </Field>
+          <div style={{ fontSize: 13, color: C.muted, margin: "-2px 0 12px", lineHeight: 1.4 }}>
+            Edelmetalle werden automatisch aktualisiert (in Unzen). Öl braucht einen Twelve-Data-Key in den Einstellungen.
+          </div>
+          <Btn
+            disabled={!f.qty}
+            onClick={() => { const c = COMMODITIES.find((x) => x.id === (f.commodity || "gold")); onSave({ ...f, commodity: c.id, name: f.name || c.label, unit: c.unit, symbol: c.id, qty: Number(f.qty), buyPrice: Number(f.buyPrice) || 0, price: Number(f.price) || Number(f.buyPrice) || 0 }); }}
+          >Speichern</Btn>
+        </>
+      ) : isValueType ? (
         <>
           <Field label="Bezeichnung">
             <input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder={f.type === "immobilie" ? "z. B. Eigenheim" : "z. B. Tagesgeld"} />
@@ -637,7 +688,7 @@ function ForecastView({ surplus, startValue }) {
 /* ---------- Haupt-App ---------- */
 export default function App() {
   const [data, setData] = useState(() => loadLS(DATA_KEY, EMPTY));
-  const [settings, setSettings] = useState(() => loadLS(SETTINGS_KEY, { finnhubKey: "", currency: "EUR", theme: "system" }));
+  const [settings, setSettings] = useState(() => loadLS(SETTINGS_KEY, { finnhubKey: "", currency: "EUR", theme: "system", tdKey: "" }));
   CUR = CURRENCIES.includes(settings.currency) ? settings.currency : "EUR";
   const [tab, setTab] = useState("home");
   const [costView, setCostView] = useState("fix");
@@ -764,6 +815,7 @@ export default function App() {
     const notes = [];
     const failed = [];
     const updated = {};   // symbol → price
+    const updatedById = {}; // item.id → price (Rohstoffe, TD-Treffer)
     const resolved = {};  // symbol → coinId (für künftige Updates cachen)
     const cur = CURRENCIES.includes(settings.currency) ? settings.currency : "EUR";
     const curLow = cur.toLowerCase();
@@ -808,13 +860,12 @@ export default function App() {
       }
     }
 
-    /* Aktien/ETF → Finnhub (USD) + Umrechnung in die gewählte Währung */
+    /* Aktien/ETF → zuerst Finnhub (US, USD). Nicht Gefundenes → Twelve Data */
     const stocks = priceable.filter((i) => i.type === "aktie" || i.type === "etf");
+    const tdRetry = [];
     if (stocks.length) {
-      if (!settings.finnhubKey) {
-        notes.push("Für Aktien/ETF: Finnhub-Key in den Einstellungen hinterlegen");
-      } else {
-        const usdEur = await fetchUsdRate(cur);
+      if (settings.finnhubKey) {
+        const usdEur = await fetchFx("USD", cur);
         if (!usdEur) {
           notes.push("Wechselkurs nicht erreichbar – Aktien übersprungen");
         } else {
@@ -827,29 +878,81 @@ export default function App() {
               if (res.status === 429) { notes.push("Finnhub-Limit erreicht – in 1 Min. erneut versuchen"); break; }
               const q = await res.json();
               if (q && q.c) updated[sym] = q.c * usdEur;
-              else failed.push(`${sym} (nicht im Free-Tier)`);
+              else tdRetry.push(s);
               await sleep(250);
-            } catch { failed.push(sym); }
+            } catch { tdRetry.push(s); }
           }
-          if (keyInvalid) notes.push("Finnhub-Key ungültig – bitte in den Einstellungen prüfen");
+          if (keyInvalid) { notes.push("Finnhub-Key ungültig – bitte in den Einstellungen prüfen"); }
+        }
+      } else {
+        tdRetry.push(...stocks);
+      }
+    }
+
+    /* Edelmetalle → gold-api (USD/Unze, ohne Key) + Umrechnung */
+    const metals = priceable.filter((i) => i.type === "rohstoff" && (COMMODITIES.find((c) => c.id === i.commodity) || {}).src === "metal");
+    if (metals.length) {
+      const fx = await fetchFx("USD", cur);
+      if (!fx) { notes.push("Wechselkurs nicht erreichbar – Edelmetalle übersprungen"); }
+      else {
+        for (const m of metals) {
+          const def = COMMODITIES.find((c) => c.id === m.commodity);
+          try {
+            const j = await fetch(`https://api.gold-api.com/price/${def.sym}`).then((r) => r.json());
+            if (j && j.price) updatedById[m.id] = j.price * fx;
+            else failed.push(m.name);
+          } catch { failed.push(m.name); }
         }
       }
     }
 
-    if (Object.keys(updated).length || Object.keys(resolved).length) {
+    /* Twelve Data → EU-/nicht-US-Aktien, ETFs (per Ticker oder ISIN) und Öl */
+    const tdCommods = priceable.filter((i) => i.type === "rohstoff" && (COMMODITIES.find((c) => c.id === i.commodity) || {}).src === "td");
+    if (tdRetry.length || tdCommods.length) {
+      if (!settings.tdKey) {
+        if (tdRetry.length) notes.push("Für EU-Aktien/ETFs & Öl: Twelve-Data-Key in den Einstellungen hinterlegen");
+        else if (tdCommods.length) notes.push("Für Öl: Twelve-Data-Key in den Einstellungen hinterlegen");
+      } else {
+        const fxCache = {};
+        const fxTo = async (ccy) => { if (!ccy) return 0; if (ccy === cur) return 1; if (fxCache[ccy] != null) return fxCache[ccy]; const r = await fetchFx(ccy, cur); fxCache[ccy] = r; return r; };
+        for (const s of tdRetry) {
+          const sym = (s.symbol || "").trim();
+          try {
+            const q = await fetch(`https://api.twelvedata.com/quote?symbol=${encodeURIComponent(sym)}&apikey=${settings.tdKey}`).then((r) => r.json());
+            const px = q && q.close != null ? Number(q.close) : null;
+            if (px && q.currency) { const r = await fxTo(q.currency); if (r) updated[sym.toUpperCase()] = px * r; else failed.push(sym); }
+            else failed.push(`${sym} (nicht gefunden)`);
+            await sleep(300);
+          } catch { failed.push(sym); }
+        }
+        for (const m of tdCommods) {
+          const def = COMMODITIES.find((c) => c.id === m.commodity);
+          try {
+            const q = await fetch(`https://api.twelvedata.com/quote?symbol=${encodeURIComponent(def.sym)}&apikey=${settings.tdKey}`).then((r) => r.json());
+            const px = q && q.close != null ? Number(q.close) : null;
+            const ccy = (q && q.currency) || "USD";
+            if (px) { const r = await fxTo(ccy); if (r) updatedById[m.id] = px * r; else failed.push(m.name); }
+            else failed.push(m.name);
+            await sleep(300);
+          } catch { failed.push(m.name); }
+        }
+      }
+    }
+
+    if (Object.keys(updated).length || Object.keys(updatedById).length || Object.keys(resolved).length) {
       const now = Date.now();
       setData((d) => ({
         ...d,
         investments: d.investments.map((i) => {
           const sym = (i.symbol || "").toUpperCase();
-          const p = updated[sym];
+          const p = updatedById[i.id] != null ? updatedById[i.id] : updated[sym];
           const coinId = resolved[sym] || i.coinId;
-          if (p) return { ...i, price: Number(p.toFixed(p < 1 ? 4 : 2)), priceUpdated: now, coinId };
+          if (p != null) return { ...i, price: Number(p.toFixed(p < 1 ? 4 : 2)), priceUpdated: now, coinId };
           return coinId !== i.coinId ? { ...i, coinId } : i;
         }),
       }));
     }
-    const n = Object.keys(updated).length;
+    const n = Object.keys(updated).length + Object.keys(updatedById).length;
     const parts = [];
     if (n) parts.push(`${n} von ${priceable.length} Kursen aktualisiert`);
     if (failed.length) parts.push(`Fehlgeschlagen: ${[...new Set(failed)].join(", ")}`);
@@ -1253,12 +1356,14 @@ export default function App() {
                 const typeLabel = INVEST_TYPES.find((t) => t.id === i.type)?.label || "";
                 const sub = isValue
                   ? typeLabel
-                  : `${String(i.qty).replace(".", ",")} Stück · Kurs ${eurFull(i.price || 0)}${i.priceUpdated ? "" : " · noch kein Live-Kurs"}`;
+                  : `${String(i.qty).replace(".", ",")} ${i.type === "rohstoff" ? (i.unit || "Einheiten") : "Stück"} · Kurs ${eurFull(i.price || 0)}${i.priceUpdated ? "" : " · noch kein Live-Kurs"}`;
                 return (
                   <ListItem key={i.id}
                     lead={isValue
                       ? <Lead icon={i.type === "immobilie" ? Home : Banknote} />
-                      : <AssetLogo inv={i} />}
+                      : i.type === "rohstoff"
+                        ? <Lead icon={Gem} />
+                        : <AssetLogo inv={i} />}
                     armed={pendingDelete === i.id}
                     title={i.name}
                     sub={sub}
@@ -1341,13 +1446,23 @@ export default function App() {
             Bestehende Beträge werden nicht umgerechnet – sie gelten in der gewählten Währung.
             Live-Kurse (Aktien &amp; Krypto) werden automatisch in die gewählte Währung umgerechnet.
           </div>
-          <Field label="Finnhub API-Key (für Aktien/ETF-Kurse, kostenlos auf finnhub.io)">
+          <Field label="Finnhub API-Key (US-Aktien/ETF, kostenlos auf finnhub.io)">
             <input
               value={settings.finnhubKey}
               onChange={(e) => setSettings({ ...settings, finnhubKey: e.target.value.trim() })}
               placeholder="z. B. c1a2b3…"
             />
           </Field>
+          <Field label="Twelve Data API-Key (europäische/deutsche Aktien & ETFs, Öl – kostenlos auf twelvedata.com)">
+            <input
+              value={settings.tdKey || ""}
+              onChange={(e) => setSettings({ ...settings, tdKey: e.target.value.trim() })}
+              placeholder="z. B. abcd1234…"
+            />
+          </Field>
+          <div style={{ fontSize: 12.5, lineHeight: 1.4, color: C.muted, margin: "-6px 0 14px" }}>
+            Edelmetalle (Gold, Silber, Platin, Palladium) laufen automatisch ohne Key. Für europäische Wertpapiere und Öl den kostenlosen Twelve-Data-Key eintragen – als Ticker funktioniert dort auch die ISIN.
+          </div>
           <div style={{ display: "flex", gap: 12, marginBottom: 14 }}>
             <Btn kind="ghost" onClick={exportData} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
               <Download size={16} strokeWidth={1.75} /> Backup exportieren
